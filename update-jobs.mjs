@@ -76,10 +76,20 @@ function parsePay(raw) {
   return { ngn: Math.round(monthlyUsd * USD_TO_NGN), raw: text };
 }
 
+const COMMON_HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (compatible; JobBenchBot/1.0; +https://github.com)",
+  Accept: "application/json",
+};
+
 async function fetchJobicy() {
   try {
-    const res = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50");
+    const res = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50", {
+      headers: COMMON_HEADERS,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    console.log(`Jobicy: ${(data.jobs || []).length} jobs`);
     return (data.jobs || []).map((j) => ({
       id: `jobicy-${j.id}`,
       title: j.jobTitle,
@@ -100,8 +110,12 @@ async function fetchJobicy() {
 
 async function fetchArbeitnow() {
   try {
-    const res = await fetch("https://www.arbeitnow.com/api/job-board-api");
+    const res = await fetch("https://www.arbeitnow.com/api/job-board-api", {
+      headers: COMMON_HEADERS,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    console.log(`Arbeitnow: ${(data.data || []).length} jobs`);
     return (data.data || []).map((j) => ({
       id: `arbeitnow-${j.slug}`,
       title: j.title,
@@ -122,9 +136,15 @@ async function fetchArbeitnow() {
 
 async function fetchRemoteOK() {
   try {
-    const res = await fetch("https://remoteok.com/api");
+    // Remote OK returns 403/empty without a realistic User-Agent header.
+    const res = await fetch("https://remoteok.com/api", {
+      headers: COMMON_HEADERS,
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    return (data || [])
+    const jobs = (data || []).filter((j) => j.id);
+    console.log(`Remote OK: ${jobs.length} jobs`);
+    return jobs
       .filter((j) => j.id)
       .map((j) => ({
         id: `remoteok-${j.id}`,
@@ -152,7 +172,17 @@ async function main() {
     fetchRemoteOK(),
   ]);
 
+  console.log(
+    `Fetched totals — Jobicy: ${jobicy.length}, Arbeitnow: ${arbeitnow.length}, Remote OK: ${remoteok.length}`
+  );
+
   const all = [...jobicy, ...arbeitnow, ...remoteok];
+
+  if (all.length === 0) {
+    console.warn(
+      "WARNING: all three sources returned 0 jobs — check for API errors above before assuming this is correct."
+    );
+  }
 
   const processed = all
     .map((j) => {
