@@ -1,0 +1,433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Job Bench — Adedoyin</title>
+<style>
+  :root {
+    --green: #0f4d2e;
+    --green-light: #e7f3ec;
+    --ink: #1a1a1a;
+    --muted: #666;
+    --border: #e2e2e2;
+    --bg: #fafaf8;
+    --card: #ffffff;
+    --danger: #b3261e;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+  }
+  header {
+    background: var(--green);
+    color: #fff;
+    padding: 20px 16px;
+  }
+  header h1 { margin: 0; font-size: 20px; }
+  header p { margin: 4px 0 0; font-size: 13px; opacity: 0.85; }
+  .wrap { max-width: 720px; margin: 0 auto; padding: 16px; }
+
+  .card {
+    background: var(--card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px;
+    margin-bottom: 14px;
+  }
+
+  .status-bar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    font-size: 12px;
+    color: var(--muted);
+    margin-bottom: 12px;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .status-bar button {
+    background: none;
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 4px 8px;
+    font-size: 12px;
+    cursor: pointer;
+  }
+
+  label { display: block; font-size: 13px; font-weight: 600; margin: 10px 0 4px; }
+  input[type=text], input[type=email], input[type=tel], input[type=number], textarea {
+    width: 100%;
+    padding: 9px 10px;
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    font-size: 14px;
+    font-family: inherit;
+  }
+  textarea { resize: vertical; min-height: 60px; }
+  .file-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-top: 4px;
+    flex-wrap: wrap;
+  }
+  .file-row input[type=file] { font-size: 13px; }
+  .resume-name { font-size: 12px; color: var(--green); font-weight: 600; }
+
+  .btn {
+    display: inline-block;
+    background: var(--green);
+    color: #fff;
+    border: none;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 14px;
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .btn.secondary {
+    background: #fff;
+    color: var(--green);
+    border: 1px solid var(--green);
+  }
+  .btn.small { padding: 6px 10px; font-size: 12px; }
+  .btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .filters {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    font-size: 13px;
+  }
+  .filters label.inline {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-weight: 500;
+    margin: 0;
+  }
+  .filters input[type=checkbox] { width: 16px; height: 16px; }
+  .filters .pay-input { display: flex; align-items: center; gap: 6px; }
+  .filters .pay-input input { width: 110px; }
+
+  .job-card {
+    border-left: 3px solid var(--green);
+  }
+  .job-title { font-size: 15px; font-weight: 700; margin: 0 0 2px; }
+  .job-company { font-size: 13px; color: var(--muted); margin: 0 0 8px; }
+  .job-meta {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-bottom: 10px;
+  }
+  .tag {
+    font-size: 11px;
+    padding: 3px 8px;
+    border-radius: 999px;
+    background: var(--green-light);
+    color: var(--green);
+    font-weight: 600;
+  }
+  .tag.pay { background: #fff4e0; color: #8a5a00; }
+  .tag.age { background: #eef1ff; color: #33409a; }
+  .tag.source { background: #f1f1f1; color: #555; }
+  .job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+  .empty, .loading { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 14px; }
+  .note {
+    font-size: 12px;
+    color: var(--muted);
+    background: #fff8e6;
+    border: 1px solid #f0dca0;
+    border-radius: 8px;
+    padding: 8px 10px;
+    margin-bottom: 12px;
+  }
+  .toast {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--ink);
+    color: #fff;
+    padding: 10px 16px;
+    border-radius: 8px;
+    font-size: 13px;
+    opacity: 0;
+    transition: opacity 0.2s;
+    pointer-events: none;
+    z-index: 100;
+  }
+  .toast.show { opacity: 1; }
+  h2.section { font-size: 14px; margin: 18px 0 8px; color: var(--muted); text-transform: uppercase; letter-spacing: 0.04em; }
+</style>
+</head>
+<body>
+
+<header>
+  <h1>Job Bench</h1>
+  <p>Remote / part-time listings from the last 48 hours, matched to your profile.</p>
+</header>
+
+<div class="wrap">
+
+  <div class="status-bar">
+    <span id="lastUpdated">Loading listings…</span>
+    <button id="editProfileBtn">Edit profile & resume</button>
+  </div>
+
+  <!-- PROFILE SETUP -->
+  <div class="card" id="profileCard">
+    <strong>Your profile</strong>
+    <p style="font-size:12px;color:var(--muted);margin:4px 0 0;">
+      Saved only in this browser (local storage) — never uploaded anywhere. Fill this
+      in once; every application note below is generated from it.
+    </p>
+    <label>Full name</label>
+    <input type="text" id="pName" placeholder="Adebanjo Musa Adedoyin" />
+    <label>Email</label>
+    <input type="email" id="pEmail" placeholder="you@email.com" />
+    <label>Phone / WhatsApp</label>
+    <input type="tel" id="pPhone" placeholder="+234..." />
+    <label>Skills / roles you're targeting</label>
+    <textarea id="pSkills" placeholder="Electronics repair, 3D printing, technical support, data entry, web tools..."></textarea>
+    <label>Short pitch (1–2 sentences, used in every application note)</label>
+    <textarea id="pPitch" placeholder="I'm an electronics/3D-print technician and self-taught web builder, currently studying, looking for remote part-time work I can fit around school and weekends."></textarea>
+
+    <label>Resume</label>
+    <div class="file-row">
+      <input type="file" id="resumeFile" accept=".pdf,.doc,.docx" />
+      <span class="resume-name" id="resumeName"></span>
+    </div>
+
+    <div style="margin-top:14px;">
+      <button class="btn" id="saveProfileBtn">Save profile</button>
+    </div>
+  </div>
+
+  <!-- FILTERS -->
+  <div class="card" id="filtersCard" style="display:none;">
+    <strong>Filters</strong>
+    <div class="filters" style="margin-top:10px;">
+      <label class="inline"><input type="checkbox" id="fPartTime" checked /> Remote / part-time / flexible only</label>
+      <label class="inline"><input type="checkbox" id="fRecent" checked /> Posted within last 48 hrs</label>
+      <div class="pay-input">
+        <span>Min pay ₦/mo:</span>
+        <input type="number" id="fMinPay" value="100000" step="10000" />
+      </div>
+    </div>
+    <div class="note" style="margin-top:10px;">
+      Pay is estimated from USD listings at a rough conversion rate and is often
+      "Not listed" — treat the pay filter as a rough sort, not an exact cutoff.
+      Weekend availability isn't something these job sources report, so check
+      each listing yourself for that.
+    </div>
+  </div>
+
+  <h2 class="section">Matching jobs</h2>
+  <div id="jobList" class="loading">Loading listings…</div>
+
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+const JOBS_URL = "./jobs.json";
+let allJobs = [];
+let profile = null;
+
+function loadProfile() {
+  const raw = localStorage.getItem("jobbench_profile");
+  return raw ? JSON.parse(raw) : null;
+}
+
+function saveProfile() {
+  const p = {
+    name: document.getElementById("pName").value.trim(),
+    email: document.getElementById("pEmail").value.trim(),
+    phone: document.getElementById("pPhone").value.trim(),
+    skills: document.getElementById("pSkills").value.trim(),
+    pitch: document.getElementById("pPitch").value.trim(),
+    resumeName: profile?.resumeName || "",
+    resumeData: profile?.resumeData || "",
+  };
+  localStorage.setItem("jobbench_profile", JSON.stringify(p));
+  profile = p;
+  document.getElementById("profileCard").style.display = "none";
+  document.getElementById("filtersCard").style.display = "block";
+  showToast("Profile saved");
+  renderJobs();
+}
+
+function fillProfileForm(p) {
+  document.getElementById("pName").value = p.name || "";
+  document.getElementById("pEmail").value = p.email || "";
+  document.getElementById("pPhone").value = p.phone || "";
+  document.getElementById("pSkills").value = p.skills || "";
+  document.getElementById("pPitch").value = p.pitch || "";
+  document.getElementById("resumeName").textContent = p.resumeName || "";
+}
+
+document.getElementById("resumeFile").addEventListener("change", (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = () => {
+    profile = profile || {};
+    profile.resumeName = file.name;
+    profile.resumeData = reader.result; // base64 data URL, kept locally only
+    document.getElementById("resumeName").textContent = file.name;
+    showToast("Resume attached — click Save profile to keep it");
+  };
+  reader.readAsDataURL(file);
+});
+
+document.getElementById("saveProfileBtn").addEventListener("click", saveProfile);
+document.getElementById("editProfileBtn").addEventListener("click", () => {
+  document.getElementById("profileCard").style.display = "block";
+  window.scrollTo({ top: 0, behavior: "smooth" });
+});
+["fPartTime", "fRecent", "fMinPay"].forEach((id) => {
+  document.getElementById(id).addEventListener("input", renderJobs);
+});
+
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("show");
+  setTimeout(() => t.classList.remove("show"), 2200);
+}
+
+function ageLabel(hours) {
+  if (hours === null || hours === undefined) return "Date unknown";
+  if (hours < 1) return "Just posted";
+  if (hours < 24) return `${Math.round(hours)}h ago`;
+  return `${Math.round(hours / 24)}d ago`;
+}
+
+function payLabel(job) {
+  if (job.payEstimateNGN) {
+    return `~₦${job.payEstimateNGN.toLocaleString()}/mo (est.)`;
+  }
+  return job.payRawDisplay || "Not listed";
+}
+
+function generateNote(job) {
+  const p = profile || {};
+  return `Subject: Application — ${job.title}
+
+Hello ${job.company || "Hiring Team"},
+
+${p.pitch || "I'm reaching out to apply for this role."}
+
+Relevant skills: ${p.skills || "(add your skills in your profile)"}
+
+I'm available to work part-time / flexible hours, including weekends, and can start promptly. Please find my resume attached${p.resumeName ? ` (${p.resumeName})` : ""}.
+
+Thank you for your consideration.
+
+${p.name || ""}
+${p.email || ""}
+${p.phone || ""}`;
+}
+
+async function applyToJob(job) {
+  const note = generateNote(job);
+  try {
+    await navigator.clipboard.writeText(note);
+    showToast("Application note copied — paste it into the apply form");
+  } catch (e) {
+    showToast("Opening job — copy failed, note shown below");
+    alert(note);
+  }
+  window.open(job.url, "_blank", "noopener");
+}
+
+function renderJobs() {
+  const container = document.getElementById("jobList");
+  const partTimeOnly = document.getElementById("fPartTime").checked;
+  const recentOnly = document.getElementById("fRecent").checked;
+  const minPay = parseInt(document.getElementById("fMinPay").value || "0", 10);
+
+  let filtered = allJobs.filter((j) => {
+    if (partTimeOnly && !j.partTimeOrFlexible) return false;
+    if (recentOnly && j.ageHours !== null && j.ageHours > 48) return false;
+    if (minPay > 0 && j.payEstimateNGN && j.payEstimateNGN < minPay) return false;
+    return true;
+  });
+
+  if (filtered.length === 0) {
+    container.className = "empty";
+    container.innerHTML = "No jobs match your filters right now — try widening them, or check back after the next daily update.";
+    return;
+  }
+
+  container.className = "";
+  container.innerHTML = filtered
+    .map(
+      (j) => `
+    <div class="card job-card">
+      <p class="job-title">${escapeHtml(j.title)}</p>
+      <p class="job-company">${escapeHtml(j.company || "Unknown company")}</p>
+      <div class="job-meta">
+        <span class="tag age">${ageLabel(j.ageHours)}</span>
+        <span class="tag pay">${escapeHtml(payLabel(j))}</span>
+        <span class="tag source">${escapeHtml(j.source)}</span>
+        ${j.partTimeOrFlexible ? '<span class="tag">Part-time / flexible</span>' : ""}
+      </div>
+      <div class="job-actions">
+        <button class="btn small" onclick='applyJobById("${j.id}")'>Generate note & apply</button>
+        <a class="btn secondary small" href="${j.url}" target="_blank" rel="noopener">View listing</a>
+      </div>
+    </div>`
+    )
+    .join("");
+}
+
+function applyJobById(id) {
+  const job = allJobs.find((j) => j.id === id);
+  if (job) applyToJob(job);
+}
+window.applyJobById = applyJobById;
+
+function escapeHtml(str) {
+  return String(str).replace(/[&<>"']/g, (c) => ({
+    "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;",
+  }[c]));
+}
+
+async function loadJobs() {
+  try {
+    const res = await fetch(JOBS_URL, { cache: "no-store" });
+    const data = await res.json();
+    allJobs = data.jobs || [];
+    const updated = new Date(data.generatedAt);
+    document.getElementById("lastUpdated").textContent =
+      `Last updated: ${updated.toLocaleString()} · ${allJobs.length} listings`;
+    renderJobs();
+  } catch (e) {
+    document.getElementById("jobList").className = "empty";
+    document.getElementById("jobList").innerHTML =
+      "Couldn't load jobs.json yet — run the GitHub Action once, or check back after deployment.";
+    document.getElementById("lastUpdated").textContent = "Not updated yet";
+  }
+}
+
+// init
+profile = loadProfile();
+if (profile) {
+  fillProfileForm(profile);
+  document.getElementById("profileCard").style.display = "none";
+  document.getElementById("filtersCard").style.display = "block";
+} else {
+  document.getElementById("filtersCard").style.display = "none";
+}
+loadJobs();
+</script>
+</body>
+</html>
