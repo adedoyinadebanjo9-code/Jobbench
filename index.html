@@ -137,6 +137,8 @@
   .tag.pay { background: #fff4e0; color: #8a5a00; }
   .tag.age { background: #eef1ff; color: #33409a; }
   .tag.source { background: #f1f1f1; color: #555; }
+  .tag.geo-good { background: #e6f6ea; color: #1c7c3f; }
+  .tag.geo-bad { background: #fdeaea; color: #a32424; }
   .job-actions { display: flex; gap: 8px; flex-wrap: wrap; }
   .empty, .loading { text-align: center; color: var(--muted); padding: 30px 10px; font-size: 14px; }
   .note {
@@ -378,6 +380,9 @@ function renderJobs() {
         <span class="tag age">${ageLabel(j.ageHours)}</span>
         <span class="tag pay">${escapeHtml(payLabel(j))}</span>
         <span class="tag source">${escapeHtml(j.source)}</span>
+        ${j.location ? `<span class="tag">${escapeHtml(j.location)}</span>` : ""}
+        ${j.geoFit > 0 ? '<span class="tag geo-good">🌍 Nigeria/anywhere friendly</span>' : ""}
+        ${j.geoFit < 0 ? '<span class="tag geo-bad">⚠️ region-restricted</span>' : ""}
         ${j.partTimeOrFlexible ? '<span class="tag">Part-time / flexible</span>' : ""}
       </div>
       <div class="job-actions">

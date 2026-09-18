@@ -32,11 +32,88 @@ const USD_TO_NGN = 1600;
 const MIN_PAY_NGN_MONTHLY = 100000;
 const MAX_AGE_HOURS = 48;
 
+// ---- Location signal ----
+// The three sources below (Jobicy, Arbeitnow, Remote OK) are global remote
+// boards that skew heavily US/EU. Skill-keyword scoring alone ranks a US-only
+// "repair technician" role above a genuinely open one, and never rewards a
+// job that's actually open to Nigeria. This layer fixes that: it reads each
+// job's stated geo eligibility (jobGeo/location/description) and boosts
+// anything explicitly Nigeria/Africa-friendly or open to anywhere, while
+// pushing down roles that name a single region Adedoyin can't work from.
+const GEO_BOOST_KEYWORDS = [
+  { word: "nigeria", weight: 10 },
+  { word: "lagos", weight: 10 },
+  { word: "africa", weight: 7 },
+  { word: "anywhere", weight: 5 },
+  { word: "worldwide", weight: 5 },
+  { word: "global", weight: 3 },
+  { word: "remote - global", weight: 5 },
+  { word: "remote, global", weight: 5 },
+  { word: "international", weight: 2 },
+];
+
+// Substrings that mean "not open to someone based in Nigeria" when they show
+// up in a geo/location field or the description. Kept short and literal on
+// purpose — this is a deprioritization signal, not a hard filter, since a
+// posting can still be misclassified.
+const GEO_RESTRICT_KEYWORDS = [
+  "us citizens only",
+  "u.s. citizens only",
+  "usa only",
+  "us only",
+  "united states only",
+  "must be based in the us",
+  "must be located in the us",
+  "us-based only",
+  "eu citizens only",
+  "european union only",
+  "europe only",
+  "eu only",
+  "uk only",
+  "united kingdom only",
+  "uk-based only",
+  "canada only",
+  "must be based in canada",
+  "australia only",
+  "must be based in australia",
+  "must reside in the united states",
+  "authorized to work in the us without sponsorship",
+];
+
+// Bare region names, used only against a short geo/location field (not the
+// full description, where they'd false-positive on unrelated mentions).
+const GEO_FIELD_RESTRICT_REGEX =
+  /\b(usa|us|united states|europe|eu|uk|united kingdom|canada|australia)\b/i;
+const GEO_FIELD_OPEN_REGEX = /\b(anywhere|worldwide|global)\b/i;
+const GEO_FIELD_AFRICA_REGEX = /\b(africa|nigeria)\b/i;
+
 function scoreText(text) {
   const t = text.toLowerCase();
   let score = 0;
   for (const { word, weight } of KEYWORDS) {
     if (t.includes(word)) score += weight;
+  }
+  return score;
+}
+
+// geoField is a short, explicit eligibility string when the source provides
+// one (Jobicy's jobGeo, Arbeitnow/Remote OK's location) — separate from the
+// long free-text description, since a one-word field is unambiguous while a
+// paragraph can mention "Europe" or "Canada" in passing.
+function geoScore(description, geoField) {
+  const t = (description || "").toLowerCase();
+  let score = 0;
+  for (const { word, weight } of GEO_BOOST_KEYWORDS) {
+    if (t.includes(word)) score += weight;
+  }
+  for (const bad of GEO_RESTRICT_KEYWORDS) {
+    if (t.includes(bad)) score -= 10;
+  }
+  if (geoField) {
+    const g = String(geoField).toLowerCase();
+    if (GEO_FIELD_AFRICA_REGEX.test(g)) score += 12;
+    else if (GEO_FIELD_OPEN_REGEX.test(g)) score += 8;
+    else if (GEO_FIELD_RESTRICT_REGEX.test(g)) score -= 6;
   }
   return score;
 }
@@ -96,7 +173,9 @@ async function fetchJobicy() {
       company: j.companyName,
       url: j.url,
       postedAt: j.pubDate,
-      description: `${j.jobTitle} ${j.jobDescription || ""} ${j.jobType || ""}`,
+      description: `${j.jobTitle} ${j.jobDescription || ""} ${j.jobType || ""} ${j.jobGeo || ""}`,
+      geoField: j.jobGeo || null,
+      location: j.jobGeo || null,
       payRaw: j.annualSalaryMin
         ? `${j.annualSalaryMin}-${j.annualSalaryMax || ""} ${j.salaryCurrency || "USD"}/yr`
         : j.jobType || null,
@@ -124,7 +203,12 @@ async function fetchArbeitnow() {
       postedAt: j.created_at
         ? new Date(j.created_at * 1000).toISOString()
         : null,
-      description: `${j.title} ${j.description || ""} ${(j.tags || []).join(" ")} ${(j.job_types || []).join(" ")}`,
+      description: `${j.title} ${j.description || ""} ${(j.tags || []).join(" ")} ${(j.job_types || []).join(" ")} ${j.location || ""}`,
+      // Arbeitnow's own remote flag means "remote within this company's usual
+      // hiring region" (mostly EU/DACH), not "open worldwide" — so it's kept
+      // out of the geo field rather than treated as a Nigeria-friendly signal.
+      geoField: j.location || null,
+      location: j.location || (j.remote ? "Remote" : null),
       payRaw: null,
       source: "Arbeitnow",
     }));
@@ -152,7 +236,9 @@ async function fetchRemoteOK() {
         company: j.company,
         url: j.url,
         postedAt: j.date,
-        description: `${j.position} ${j.description || ""} ${(j.tags || []).join(" ")}`,
+        description: `${j.position} ${j.description || ""} ${(j.tags || []).join(" ")} ${j.location || ""}`,
+        geoField: j.location || null,
+        location: j.location || null,
         payRaw:
           j.salary_min || j.salary_max
             ? `${j.salary_min || ""}-${j.salary_max || ""} USD/yr`
@@ -188,10 +274,18 @@ async function main() {
     .map((j) => {
       const age = hoursAgo(j.postedAt);
       const pay = parsePay(j.payRaw);
+      const skillScore = scoreText(j.description || j.title || "");
+      const geoFit = geoScore(j.description, j.geoField);
       return {
         ...j,
         ageHours: age,
-        relevance: scoreText(j.description || j.title || ""),
+        skillScore,
+        geoFit,
+        // Geo fit dominates: a skill-relevant job that's US/EU-only should
+        // still rank below a weaker skill match that's actually reachable
+        // from Nigeria. relevance is kept as the combined field the UI/sort
+        // already expects.
+        relevance: skillScore + geoFit,
         partTimeOrFlexible: isPartTimeOrRemoteFriendly(j.description || ""),
         payEstimateNGN: pay?.ngn ?? null,
         payRawDisplay: pay?.raw ?? j.payRaw ?? "Not listed",
