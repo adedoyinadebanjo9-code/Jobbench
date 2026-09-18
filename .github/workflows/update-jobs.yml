@@ -19,6 +19,8 @@ jobs:
           node-version: "20"
 
       - name: Fetch and score jobs
+        env:
+          JOOBLE_API_KEY: ${{ secrets.JOOBLE_API_KEY }}
         run: node update-jobs.mjs
 
       - name: Show result summary
