@@ -1,6 +1,10 @@
 // Job Bench — fetch script
+// Pulls from public, documented job-board APIs, filters for remote/part-time + recent listings,
+// scores by relevance to keywords and geo-location, and writes jobs.json.
+
 import { writeFileSync } from "fs";
 
+// Target roles & skill keywords
 const KEYWORDS = [
   { word: "electronics", weight: 3 },
   { word: "repair", weight: 3 },
@@ -23,8 +27,9 @@ const KEYWORDS = [
 
 const USD_TO_NGN = 1600;
 const MIN_PAY_NGN_MONTHLY = 100000;
-const MAX_AGE_HOURS = 72; // Expanded slightly to catch local weekend postings
+const MAX_AGE_HOURS = 72; // Slightly broader window to account for weekend posting gaps
 
+// Location scoring signals
 const GEO_BOOST_KEYWORDS = [
   { word: "nigeria", weight: 10 },
   { word: "lagos", weight: 10 },
@@ -38,17 +43,33 @@ const GEO_BOOST_KEYWORDS = [
 ];
 
 const GEO_RESTRICT_KEYWORDS = [
-  "us citizens only", "u.s. citizens only", "usa only", "us only",
-  "united states only", "must be based in the us", "must be located in the us",
-  "us-based only", "eu citizens only", "european union only", "europe only",
-  "eu only", "uk only", "united kingdom only", "uk-based only", "canada only",
-  "must be based in canada", "australia only", "must be based in australia",
-  "must reside in the united states", "authorized to work in the us without sponsorship"
+  "us citizens only",
+  "u.s. citizens only",
+  "usa only",
+  "us only",
+  "united states only",
+  "must be based in the us",
+  "must be located in the us",
+  "us-based only",
+  "eu citizens only",
+  "european union only",
+  "europe only",
+  "eu only",
+  "uk only",
+  "united kingdom only",
+  "uk-based only",
+  "canada only",
+  "must be based in canada",
+  "australia only",
+  "must be based in australia",
+  "must reside in the united states",
+  "authorized to work in the us without sponsorship",
 ];
 
-const GEO_FIELD_RESTRICT_REGEX = /\b(usa|us|united states|europe|eu|uk|united kingdom|canada|australia)\b/i;
+const GEO_FIELD_RESTRICT_REGEX =
+  /\b(usa|us|united states|europe|eu|uk|united kingdom|canada|australia)\b/i;
 const GEO_FIELD_OPEN_REGEX = /\b(anywhere|worldwide|global)\b/i;
-const GEO_FIELD_AFRICA_REGEX = /\b(africa|nigeria|lagos|ikeja|abuja)\b/i;
+const GEO_FIELD_AFRICA_REGEX = /\b(africa|nigeria|lagos|ikeja|abuja|yaba|lekki)\b/i;
 
 function scoreText(text) {
   const t = text.toLowerCase();
@@ -122,13 +143,16 @@ function parsePay(raw) {
 }
 
 const COMMON_HEADERS = {
-  "User-Agent": "Mozilla/5.0 (compatible; JobBenchBot/1.0; +https://github.com)",
+  "User-Agent":
+    "Mozilla/5.0 (compatible; JobBenchBot/1.0; +https://github.com)",
   Accept: "application/json",
 };
 
 async function fetchJobicy() {
   try {
-    const res = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50", { headers: COMMON_HEADERS });
+    const res = await fetch("https://jobicy.com/api/v2/remote-jobs?count=50", {
+      headers: COMMON_HEADERS,
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return (data.jobs || []).map((j) => ({
@@ -140,7 +164,9 @@ async function fetchJobicy() {
       description: `${j.jobTitle} ${j.jobDescription || ""} ${j.jobType || ""} ${j.jobGeo || ""}`,
       geoField: j.jobGeo || null,
       location: j.jobGeo || null,
-      payRaw: j.annualSalaryMin ? `${j.annualSalaryMin}-${j.annualSalaryMax || ""} ${j.salaryCurrency || "USD"}/yr` : j.jobType || null,
+      payRaw: j.annualSalaryMin
+        ? `${j.annualSalaryMin}-${j.annualSalaryMax || ""} ${j.salaryCurrency || "USD"}/yr`
+        : j.jobType || null,
       source: "Jobicy",
     }));
   } catch (e) {
@@ -151,7 +177,9 @@ async function fetchJobicy() {
 
 async function fetchArbeitnow() {
   try {
-    const res = await fetch("https://www.arbeitnow.com/api/job-board-api", { headers: COMMON_HEADERS });
+    const res = await fetch("https://www.arbeitnow.com/api/job-board-api", {
+      headers: COMMON_HEADERS,
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     return (data.data || []).map((j) => ({
@@ -159,7 +187,9 @@ async function fetchArbeitnow() {
       title: j.title,
       company: j.company_name,
       url: j.url,
-      postedAt: j.created_at ? new Date(j.created_at * 1000).toISOString() : null,
+      postedAt: j.created_at
+        ? new Date(j.created_at * 1000).toISOString()
+        : null,
       description: `${j.title} ${j.description || ""} ${(j.tags || []).join(" ")} ${(j.job_types || []).join(" ")} ${j.location || ""}`,
       geoField: j.location || null,
       location: j.location || (j.remote ? "Remote" : null),
@@ -174,7 +204,9 @@ async function fetchArbeitnow() {
 
 async function fetchRemoteOK() {
   try {
-    const res = await fetch("https://remoteok.com/api", { headers: COMMON_HEADERS });
+    const res = await fetch("https://remoteok.com/api", {
+      headers: COMMON_HEADERS,
+    });
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
     const jobs = (data || []).filter((j) => j.id);
@@ -187,7 +219,10 @@ async function fetchRemoteOK() {
       description: `${j.position} ${j.description || ""} ${(j.tags || []).join(" ")} ${j.location || ""}`,
       geoField: j.location || null,
       location: j.location || null,
-      payRaw: j.salary_min || j.salary_max ? `${j.salary_min || ""}-${j.salary_max || ""} USD/yr` : null,
+      payRaw:
+        j.salary_min || j.salary_max
+          ? `${j.salary_min || ""}-${j.salary_max || ""} USD/yr`
+          : null,
       source: "Remote OK",
     }));
   } catch (e) {
@@ -196,7 +231,7 @@ async function fetchRemoteOK() {
   }
 }
 
-// Fixed Jooble search query
+// Jooble search using clean space-separated keywords for better API compatibility
 async function fetchJooble() {
   const key = process.env.JOOBLE_API_KEY;
   if (!key) {
@@ -204,12 +239,11 @@ async function fetchJooble() {
     return [];
   }
   try {
-    // Simplified search keywords to prevent Jooble returning 0 results
     const res = await fetch(`https://jooble.org/api/${key}`, {
       method: "POST",
       headers: { ...COMMON_HEADERS, "Content-Type": "application/json" },
       body: JSON.stringify({
-        keywords: "technician OR remote OR support OR assistant",
+        keywords: "technician support assistant remote",
         location: "Nigeria",
       }),
     });
@@ -249,6 +283,10 @@ async function main() {
 
   const all = [...jobicy, ...arbeitnow, ...remoteok, ...jooble];
 
+  if (all.length === 0) {
+    console.warn("WARNING: all sources returned 0 jobs.");
+  }
+
   const processed = all
     .map((j) => {
       const age = hoursAgo(j.postedAt);
@@ -266,7 +304,7 @@ async function main() {
         payRawDisplay: pay?.raw ?? j.payRaw ?? "Not listed",
       };
     })
-    // Crucial Fix: Preserve jobs with missing or slightly older dates from local sources (Jooble)
+    // Keeps local Nigerian postings even if their parsed timestamp is missing or > MAX_AGE_HOURS
     .filter((j) => j.ageHours === null || j.source === "Jooble (NG)" || j.ageHours <= MAX_AGE_HOURS)
     .sort((a, b) => b.relevance - a.relevance);
 
