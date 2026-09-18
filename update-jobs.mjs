@@ -135,7 +135,9 @@ function hoursAgo(dateStr) {
   return (Date.now() - posted) / (1000 * 60 * 60);
 }
 
-// Try to pull a monthly USD figure out of free-text salary strings.
+// Try to pull a monthly figure out of free-text salary strings.
+// Handles both USD listings (converted to NGN) and naira listings (kept as-is,
+// since Nigerian job boards quote salaries in NGN, usually per month).
 // Returns { ngn, raw } or null if nothing usable is found.
 function parsePay(raw) {
   if (!raw) return null;
@@ -145,10 +147,21 @@ function parsePay(raw) {
   const value = parseFloat(nums[nums.length - 1].replace(/,/g, ""));
   if (Number.isNaN(value)) return { ngn: null, raw: text };
 
-  // crude heuristics: yearly figures are usually >> monthly
+  const isNaira = /₦|\bngn\b|\bnaira\b/i.test(text);
+  const isYearly = /year|annum|yr|p\.a\./i.test(text);
+  const isHourly = /hour|hr/i.test(text);
+
+  if (isNaira) {
+    let monthly = value;
+    if (isYearly) monthly = value / 12;
+    else if (isHourly) monthly = value * 160;
+    return { ngn: Math.round(monthly), raw: text };
+  }
+
+  // crude heuristics for USD: yearly figures are usually >> monthly
   let monthlyUsd = value;
-  if (/year|annum|yr/i.test(text) || value > 8000) monthlyUsd = value / 12;
-  if (/hour|hr/i.test(text)) monthlyUsd = value * 160; // ~160 working hrs/mo
+  if (isYearly || value > 8000) monthlyUsd = value / 12;
+  if (isHourly) monthlyUsd = value * 160; // ~160 working hrs/mo
 
   return { ngn: Math.round(monthlyUsd * USD_TO_NGN), raw: text };
 }
@@ -251,22 +264,72 @@ async function fetchRemoteOK() {
   }
 }
 
+// Jooble is a global aggregator that, unlike the three sources above, also
+// pulls from Nigerian job sites (Jobberman, MyJobMag, etc. don't offer a
+// public API themselves, but Jooble indexes postings that originate there).
+// Free API key from https://jooble.org/api/about — note the key has a
+// LIFETIME cap of 500 requests, so this is called once per run, not per
+// keyword. Set JOOBLE_API_KEY as a GitHub Actions secret; if it's not set,
+// this source is skipped rather than failing the whole run.
+async function fetchJooble() {
+  const key = process.env.JOOBLE_API_KEY;
+  if (!key) {
+    console.warn("JOOBLE_API_KEY not set — skipping Jooble (Nigeria) fetch.");
+    return [];
+  }
+  try {
+    const res = await fetch(`https://jooble.org/api/${key}`, {
+      method: "POST",
+      headers: { ...COMMON_HEADERS, "Content-Type": "application/json" },
+      body: JSON.stringify({
+        keywords:
+          "electronics repair technician OR remote OR part time OR technical support OR data entry",
+        location: "Nigeria",
+      }),
+    });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const jobs = data.jobs || [];
+    console.log(`Jooble (Nigeria): ${jobs.length} jobs`);
+    return jobs.map((j, i) => ({
+      id: `jooble-${j.id || i}`,
+      title: j.title,
+      company: j.company || null,
+      url: j.link,
+      postedAt: j.updated || null,
+      description: `${j.title} ${j.snippet || ""} ${j.location || ""} ${j.type || ""}`,
+      // Jooble was already asked to search within Nigeria, so treat its
+      // location field (or a Nigeria fallback) as the geo signal directly.
+      // Always append "Nigeria": Jooble often returns just "Lagos" or "Ikeja",
+      // which wouldn't match the Africa/Nigeria geo regex on its own.
+      geoField: `${j.location || ""} Nigeria`.trim(),
+      location: j.location || "Nigeria",
+      payRaw: j.salary || null,
+      source: "Jooble (NG)",
+    }));
+  } catch (e) {
+    console.error("Jooble fetch failed:", e.message);
+    return [];
+  }
+}
+
 async function main() {
-  const [jobicy, arbeitnow, remoteok] = await Promise.all([
+  const [jobicy, arbeitnow, remoteok, jooble] = await Promise.all([
     fetchJobicy(),
     fetchArbeitnow(),
     fetchRemoteOK(),
+    fetchJooble(),
   ]);
 
   console.log(
-    `Fetched totals — Jobicy: ${jobicy.length}, Arbeitnow: ${arbeitnow.length}, Remote OK: ${remoteok.length}`
+    `Fetched totals — Jobicy: ${jobicy.length}, Arbeitnow: ${arbeitnow.length}, Remote OK: ${remoteok.length}, Jooble (NG): ${jooble.length}`
   );
 
-  const all = [...jobicy, ...arbeitnow, ...remoteok];
+  const all = [...jobicy, ...arbeitnow, ...remoteok, ...jooble];
 
   if (all.length === 0) {
     console.warn(
-      "WARNING: all three sources returned 0 jobs — check for API errors above before assuming this is correct."
+      "WARNING: all sources returned 0 jobs — check for API errors above before assuming this is correct."
     );
   }
 
